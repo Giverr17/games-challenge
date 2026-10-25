@@ -241,6 +241,45 @@ $fire = function ($row, $col) {
     broadcast(new RoomUpdated($this->code, 'shot'));
 };
 
+
+$requestRematch = function () {
+    $me = $this->myPlayer();
+    if (! $me) {
+        return;
+    }
+
+    $newCode = DB::transaction(function () use ($me) {
+        // lock the finished game, so two simultaneous presses can't create two rematches
+        $game = Game::where('id', $me->game_id)->lockForUpdate()->first();
+
+        if ($game->status !== 'finished') {
+            return null;
+        }
+        if ($game->rematch_code) {
+            return $game->rematch_code; // someone already asked: reuse it (idempotent)
+        }
+
+        $new = Game::create(['code' => Str::lower(Str::random(8)), 'status' => 'placing']);
+
+        // same seats, same tokens: it is the same two people
+        foreach ($game->players as $p) {
+            $new->players()->create(['seat' => $p->seat, 'token' => $p->token]);
+        }
+
+        $game->update(['rematch_code' => $new->code]);
+
+        return $new->code;
+    });
+
+    if (! $newCode) {
+        return;
+    }
+
+    broadcast(new RoomUpdated($this->code, 'rematch'));
+
+    return $this->redirect(route('battleship.rematch', $this->code));
+};
+
 $lockFleet = function () {
     $me = $this->myPlayer();
     if (! $me || $me->ready) {
@@ -389,6 +428,17 @@ with(function () {
         <p class="mb-2 text-lg font-bold {{ $game->winner_seat === $me->seat ? 'text-green-600' : 'text-red-600' }}">
             {{ $game->winner_seat === $me->seat ? '🎉 You won!' : '💥 You lost. Your fleet was sunk.' }}
         </p>
+
+        @if ($game->rematch_code)
+        <a href="{{ route('battleship.rematch', $code) }}"
+            class="inline-block mb-3 px-4 py-2 bg-green-600 text-white rounded font-semibold">
+            ⚔️ Your opponent wants a rematch. Join!
+        </a>
+        @else
+        <button wire:click="requestRematch" class="mb-3 px-4 py-2 bg-blue-600 text-white rounded font-semibold">
+            🔁 Rematch
+        </button>
+        @endif
         @endif
 
         @if ($message && ! $myTurn)
@@ -513,17 +563,27 @@ with(function () {
         @endif
 </div>
 </div>
+        {{-- PLACING CONTROLS --}}
+        @if ($game->status === 'placing')
+            @if (! $me->ready)
+                <div class="flex gap-2 justify-center">
+                    <button wire:click="reroll" class="px-4 py-2 bg-gray-200 rounded">🎲 Re-roll</button>
+                    <button wire:click="lockFleet" class="px-4 py-2 bg-blue-600 text-white rounded font-semibold">Ready ✓</button>
+                </div>
+            @else
+                <p class="text-gray-600 text-center">You are ready ✓. Waiting for your opponent to finish placing…</p>
+            @endif
+        @endif
 
-{{-- PLACING CONTROLS --}}
-@if ($game->status === 'placing')
-@if (! $me->ready)
-<div class="flex gap-2 justify-center">
-    <button wire:click="reroll" class="px-4 py-2 bg-gray-200 rounded">🎲 Re-roll</button>
-    <button wire:click="lockFleet" class="px-4 py-2 bg-blue-600 text-white rounded font-semibold">Ready ✓</button>
-</div>
-@else
-<p class="text-gray-600 text-center">You are ready ✓. Waiting for your opponent to finish placing…</p>
-@endif
-@endif
-@endif
+        {{-- REJOIN LINK: available to a seated player in every phase --}}
+        <details class="mt-6 text-sm text-gray-600">
+            <summary class="cursor-pointer">Lost your seat? Keep your private rejoin link</summary>
+            <p class="mt-1">
+                Open this on another device, or after clearing cookies, to take your seat back.
+                <b>Anyone with this link can play as you, so don't share it.</b>
+            </p>
+            <input readonly value="{{ route('battleship.rejoin', [$code, $me->token]) }}"
+                class="w-full border rounded px-2 py-1 text-xs mt-1">
+        </details>
+    @endif
 </div>
