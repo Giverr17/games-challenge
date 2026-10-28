@@ -330,6 +330,10 @@ $shipParts = function ($ships) {
 <div x-data="{ tilt: false }" x-on:enemy-turn.window="setTimeout(() => $wire.computerTurn(), 900)"
     class="flex flex-col items-center p-4 sm:p-6">
     <h1 class="text-2xl font-bold mb-2">🚢 Battleship</h1>
+    <a href="{{ route('battleship.lobby') }}"
+        class="inline-block mb-4 px-5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded-lg font-semibold text-sm transition-all shadow">
+        🌐 Play Online
+    </a>
     @php
         $canFire = $phase === 'player' && !$gameOver;
         $sunkEnemy = $this->sunkEnemyCells();

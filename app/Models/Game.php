@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Game extends Model
 {
-protected $fillable = ['code', 'status', 'turn_seat', 'winner_seat', 'rematch_code'];
+protected $fillable = ['code', 'status', 'turn_seat', 'winner_seat', 'rematch_code', 'end_reason'];
     public function players(): HasMany
     {
         return $this->hasMany(GamePlayer::class);

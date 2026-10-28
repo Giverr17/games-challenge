@@ -1,0 +1,191 @@
+[phases.setup]
+nixPkgs = ["php84", "php84Packages.composer", "python311Packages.supervisor", "nodejs_22", "nginx"]
+
+[phases.install]
+cmds = []
+
+[phases.build]
+cmds = [
+    "mkdir -p /etc/supervisor/conf.d/",
+    "cp /assets/worker-nginx.conf /etc/supervisor/conf.d/worker-nginx.conf",
+    "cp /assets/worker-phpfpm.conf /etc/supervisor/conf.d/worker-phpfpm.conf",
+    "cp /assets/worker-reverb.conf /etc/supervisor/conf.d/worker-reverb.conf",
+    "cp /assets/worker-scheduler.conf /etc/supervisor/conf.d/worker-scheduler.conf",
+    "cp /assets/worker-queue.conf /etc/supervisor/conf.d/worker-queue.conf",
+    "cp /assets/supervisord.conf /etc/supervisord.conf",
+    "chmod +x /assets/start.sh",
+    "npm install",
+    "npm run build",
+    "composer install --no-dev --optimize-autoloader",
+    "php artisan route:cache",
+    "php artisan view:cache"
+]
+
+[start]
+cmd = "/assets/start.sh"
+
+[staticAssets]
+"start.sh" = '''
+#!/bin/bash
+mkdir -p /var/log/nginx
+mkdir -p /var/cache/nginx
+chown -R www-data:www-data /app/storage /app/bootstrap/cache
+chmod -R 775 /app/storage /app/bootstrap/cache
+
+mkdir -p /var/lib/sqlite
+touch /var/lib/sqlite/database.sqlite
+chown -R www-data:www-data /var/lib/sqlite
+chmod 775 /var/lib/sqlite
+chmod 664 /var/lib/sqlite/database.sqlite
+
+sed '/\$if(NIXPACKS_PHP_FALLBACK_PATH) (/,/) else ()/d' /assets/nginx.template.conf > /tmp/nginx.template.conf
+node /assets/scripts/prestart.mjs /tmp/nginx.template.conf /etc/nginx.conf
+if grep -q "client_max_body_size" /etc/nginx.conf; then
+    sed -i 's/client_max_body_size[^;]*;/client_max_body_size 50M;/g' /etc/nginx.conf
+else
+    sed -i '/root \/app\/public;/a\        client_max_body_size 50M;' /etc/nginx.conf
+fi
+
+# NEW: add the websocket proxy block for Reverb
+sed -i '/root \/app\/public;/r /assets/reverb-nginx.conf' /etc/nginx.conf
+nginx -t -c /etc/nginx.conf || true
+
+# NEW: make uploaded files reachable
+php /app/artisan storage:link --force || true
+
+php /app/artisan migrate --force
+chown -R www-data:www-data /var/lib/sqlite
+supervisord -c /etc/supervisord.conf -n
+'''
+
+# NEW: nginx block that forwards websocket traffic to Reverb
+"reverb-nginx.conf" = '''
+        location ^~ /app/ {
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header Scheme $scheme;
+            proxy_set_header SERVER_PORT $server_port;
+            proxy_set_header REMOTE_ADDR $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_read_timeout 3600s;
+            proxy_send_timeout 3600s;
+            proxy_pass http://127.0.0.1:8080;
+        }
+        location ^~ /apps/ {
+            proxy_http_version 1.1;
+            proxy_set_header Host $http_host;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "Upgrade";
+            proxy_read_timeout 3600s;
+            proxy_pass http://127.0.0.1:8080;
+        }
+'''
+
+"supervisord.conf" = '''
+[unix_http_server]
+file=/assets/supervisor.sock
+
+[supervisord]
+logfile=/var/log/supervisord.log
+logfile_maxbytes=50MB
+logfile_backups=10
+loglevel=info
+pidfile=/assets/supervisord.pid
+nodaemon=false
+silent=false
+minfds=1024
+minprocs=200
+
+[rpcinterface:supervisor]
+supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface
+
+[supervisorctl]
+serverurl=unix:///assets/supervisor.sock
+
+[include]
+files = /etc/supervisor/conf.d/*.conf
+'''
+
+"worker-nginx.conf" = '''
+[program:worker-nginx]
+process_name=%(program_name)s_%(process_num)02d
+command=nginx -c /etc/nginx.conf
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/worker-nginx.log
+stderr_logfile=/var/log/worker-nginx.log
+'''
+
+"worker-phpfpm.conf" = '''
+[program:worker-phpfpm]
+process_name=%(program_name)s_%(process_num)02d
+command=php-fpm -y /assets/php-fpm.conf -F
+autostart=true
+autorestart=true
+stdout_logfile=/var/log/worker-phpfpm.log
+stderr_logfile=/var/log/worker-phpfpm.log
+'''
+
+# NEW: websocket server (listens only inside the container)
+"worker-reverb.conf" = '''
+[program:worker-reverb]
+command=php /app/artisan reverb:start --host=127.0.0.1 --port=8080
+user=www-data
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=10
+redirect_stderr=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+'''
+
+# NEW: runs Laravel's scheduled tasks every minute
+"worker-scheduler.conf" = '''
+[program:worker-scheduler]
+command=php /app/artisan schedule:work
+user=www-data
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+redirect_stderr=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+'''
+
+# NEW: processes queued jobs and queued broadcasts
+"worker-queue.conf" = '''
+[program:worker-queue]
+command=php /app/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+user=www-data
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+stopwaitsecs=3600
+redirect_stderr=true
+stdout_logfile=/dev/stdout
+stdout_logfile_maxbytes=0
+'''
+
+"php-fpm.conf" = '''
+[www]
+listen = 127.0.0.1:9000
+user = www-data
+group = www-data
+listen.owner = www-data
+listen.group = www-data
+pm = dynamic
+pm.max_children = 50
+pm.min_spare_servers = 4
+pm.max_spare_servers = 32
+pm.start_servers = 18
+clear_env = no
+php_admin_value[post_max_size] = 50M
+php_admin_value[upload_max_filesize] = 50M
+'''

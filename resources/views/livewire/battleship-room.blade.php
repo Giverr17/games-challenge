@@ -2,6 +2,7 @@
 
 use App\Events\RoomUpdated;
 use App\Models\Game;
+use App\Models\GamePlayer;
 use App\Support\BattleshipRules;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -55,6 +56,7 @@ mount(function (string $code) {
         $this->layout = BattleshipRules::layoutFromFleet(
             $player->fleet ?: BattleshipRules::randomFleet()
         );
+        $this->heartbeat();
     }
 });
 
@@ -312,6 +314,50 @@ $lockFleet = function () {
 // calling this re-renders the component, which re-reads the database
 $refreshRoom = function () {};
 
+$heartbeat = function () {
+    $me = $this->myPlayer();
+    if ($me) {
+        GamePlayer::whereKey($me->id)->update(['last_seen_at' => now()]);
+    }
+};
+$claimVictory = function () {
+    $won = DB::transaction(function () {
+        $game = Game::where('code', $this->code)->lockForUpdate()->first();
+        $me = $this->myPlayer();
+
+        if (! $game || ! $me || $game->status !== 'playing') {
+            return false;
+        }
+
+        // if it is MY turn I am not being kept waiting, so there is nothing to claim
+        if ($game->turn_seat === $me->seat) {
+            return false;
+        }
+
+        // the SERVER checks the clock, never the browser
+        $opponent = $game->players()->where('seat', '!=', $me->seat)->first();
+        if (
+            ! $opponent || ! $opponent->last_seen_at
+            || $opponent->last_seen_at->gt(now()->subSeconds(120))
+        ) {
+            return false;
+        }
+
+        $game->update([
+            'status' => 'finished',
+            'winner_seat' => $me->seat,
+            'turn_seat' => null,
+            'end_reason' => 'forfeit',
+        ]);
+
+        return true;
+    });
+
+    if ($won) {
+        broadcast(new RoomUpdated($this->code, 'forfeit'));
+    }
+};
+
 with(function () {
     $game = Game::with(['players', 'shots'])->where('code', $this->code)->first();
     $me = $this->myPlayer();
@@ -383,7 +429,10 @@ with(function () {
     class="max-w-3xl mx-auto p-4">
     <h1 class="text-2xl font-bold mb-1">⚓ Battleship online</h1>
 
-    @if (! $me)
+    @if (! $game)
+    <p class="text-gray-700 mb-2">This game no longer exists.</p>
+    <a href="{{ route('battleship.lobby') }}" class="text-blue-600 underline">Start a new game</a>
+    @elseif (! $me)
     <p class="text-red-600 font-semibold">This game is already full.</p>
     @else
     @php
@@ -399,11 +448,20 @@ with(function () {
 
     <ul class="mb-4 space-y-1">
         @foreach ([1, 2] as $s)
-        @php $p = $game->players->firstWhere('seat', $s); @endphp
+        @php
+        $p = $game->players->firstWhere('seat', $s);
+        $online = $p && $p->last_seen_at && $p->last_seen_at->gt(now()->subSeconds(60));
+        @endphp
         <li class="px-3 py-2 rounded {{ $p ? ($p->ready ? 'bg-green-100' : 'bg-yellow-50') : 'bg-gray-100 text-gray-500' }}">
             Player {{ $s }}:
             {{ $p ? ($p->ready ? 'ready ✓' : 'placing ships…') : 'waiting…' }}
             @if ($s === $me->seat) <span class="text-xs">(you)</span> @endif
+
+            @if ($p && $s !== $me->seat && ! $finished)
+            <span class="text-xs ml-2 {{ $online ? 'text-green-600' : 'text-gray-400' }}">
+                {{ $online ? '● online' : '○ offline' . ($p->last_seen_at ? ' (last seen ' . $p->last_seen_at->diffForHumans() . ')' : '') }}
+            </span>
+            @endif
         </li>
         @endforeach
     </ul>
@@ -424,10 +482,53 @@ with(function () {
         <p class="mb-2 font-semibold {{ $myTurn ? 'text-green-700' : 'text-gray-500 animate-pulse' }}">
             {{ $myTurn ? 'Your turn. Fire at the enemy waters!' : "Opponent's turn…" }}
         </p>
+        @php
+            $opponentPlayer = $game->players->firstWhere('seat', '!=', $me->seat);
+            $opponenktGone = ! $myTurn
+                && $opponentPlayer
+                && $opponentPlayer->last_seen_at
+                && $opponentPlayer->last_seen_at->lt(now()->subSeconds(120));
+        @endphp
+        @if ($opponentGone)
+        <div class="mb-3 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-center gap-3 flex-wrap">
+            <span class="text-amber-700 text-sm font-medium">
+                ⏳ Your opponent has been offline {{ $opponentPlayer->last_seen_at->diffForHumans() }}.
+            </span>
+            <button wire:click="claimVictory"
+                class="ml-auto px-4 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-lg font-semibold text-sm transition-all shadow">
+                🏆 Claim Victory
+            </button>
+        </div>
+        @endif
         @elseif ($finished)
-        <p class="mb-2 text-lg font-bold {{ $game->winner_seat === $me->seat ? 'text-green-600' : 'text-red-600' }}">
-            {{ $game->winner_seat === $me->seat ? '🎉 You won!' : '💥 You lost. Your fleet was sunk.' }}
+        @php $iWon = $game->winner_seat === $me->seat; @endphp
+        <p class="mb-2 text-lg font-bold {{ $iWon ? 'text-green-600' : 'text-red-600' }}">
+            @if ($game->end_reason === 'forfeit')
+            {{ $iWon ? '🏳️ Your opponent left, so you win by forfeit.' : '⏱️ You were away too long, so the win went to your opponent.' }}
+            @else
+            {{ $iWon ? '🎉 You won!' : '💥 You lost. Your fleet was sunk.' }}
+            @endif
         </p>
+
+        <ul class="mb-4 space-y-1">
+            @foreach ([1, 2] as $s)
+            @php
+            $p = $game->players->firstWhere('seat', $s);
+            $online = $p && $p->last_seen_at && $p->last_seen_at->gt(now()->subSeconds(60));
+            @endphp
+            <li class="px-3 py-2 rounded {{ $p ? ($p->ready ? 'bg-green-100' : 'bg-yellow-50') : 'bg-gray-100 text-gray-500' }}">
+                Player {{ $s }}:
+                {{ $p ? ($p->ready ? 'ready ✓' : 'placing ships…') : 'waiting…' }}
+                @if ($s === $me->seat) <span class="text-xs">(you)</span> @endif
+
+                @if ($p && $s !== $me->seat && ! $finished)
+                <span class="text-xs ml-2 {{ $online ? 'text-green-600' : 'text-gray-400' }}">
+                    {{ $online ? '● online' : '○ offline' . ($p->last_seen_at ? ' (last seen ' . $p->last_seen_at->diffForHumans() . ')' : '') }}
+                </span>
+                @endif
+            </li>
+            @endforeach
+        </ul>
 
         @if ($game->rematch_code)
         <a href="{{ route('battleship.rematch', $code) }}"
@@ -563,27 +664,27 @@ with(function () {
         @endif
 </div>
 </div>
-        {{-- PLACING CONTROLS --}}
-        @if ($game->status === 'placing')
-            @if (! $me->ready)
-                <div class="flex gap-2 justify-center">
-                    <button wire:click="reroll" class="px-4 py-2 bg-gray-200 rounded">🎲 Re-roll</button>
-                    <button wire:click="lockFleet" class="px-4 py-2 bg-blue-600 text-white rounded font-semibold">Ready ✓</button>
-                </div>
-            @else
-                <p class="text-gray-600 text-center">You are ready ✓. Waiting for your opponent to finish placing…</p>
-            @endif
-        @endif
+{{-- PLACING CONTROLS --}}
+@if ($game->status === 'placing')
+@if (! $me->ready)
+<div class="flex gap-2 justify-center">
+    <button wire:click="reroll" class="px-4 py-2 bg-gray-200 rounded">🎲 Re-roll</button>
+    <button wire:click="lockFleet" class="px-4 py-2 bg-blue-600 text-white rounded font-semibold">Ready ✓</button>
+</div>
+@else
+<p class="text-gray-600 text-center">You are ready ✓. Waiting for your opponent to finish placing…</p>
+@endif
+@endif
 
-        {{-- REJOIN LINK: available to a seated player in every phase --}}
-        <details class="mt-6 text-sm text-gray-600">
-            <summary class="cursor-pointer">Lost your seat? Keep your private rejoin link</summary>
-            <p class="mt-1">
-                Open this on another device, or after clearing cookies, to take your seat back.
-                <b>Anyone with this link can play as you, so don't share it.</b>
-            </p>
-            <input readonly value="{{ route('battleship.rejoin', [$code, $me->token]) }}"
-                class="w-full border rounded px-2 py-1 text-xs mt-1">
-        </details>
-    @endif
+{{-- REJOIN LINK: available to a seated player in every phase --}}
+<details class="mt-6 text-sm text-gray-600">
+    <summary class="cursor-pointer">Lost your seat? Keep your private rejoin link</summary>
+    <p class="mt-1">
+        Open this on another device, or after clearing cookies, to take your seat back.
+        <b>Anyone with this link can play as you, so don't share it.</b>
+    </p>
+    <input readonly value="{{ route('battleship.rejoin', [$code, $me->token]) }}"
+        class="w-full border rounded px-2 py-1 text-xs mt-1">
+</details>
+@endif
 </div>
