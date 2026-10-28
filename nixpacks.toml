@@ -53,6 +53,7 @@ nginx -t -c /etc/nginx.conf || true
 # NEW: make uploaded files reachable
 php /app/artisan storage:link --force || true
 
+ln -sf "$(readlink -f "$(which php)")" /usr/local/bin/php
 php /app/artisan migrate --force
 chown -R www-data:www-data /var/lib/sqlite
 supervisord -c /etc/supervisord.conf -n
@@ -132,7 +133,7 @@ stderr_logfile=/var/log/worker-phpfpm.log
 # NEW: websocket server (listens only inside the container)
 "worker-reverb.conf" = '''
 [program:worker-reverb]
-command=php /app/artisan reverb:start --host=127.0.0.1 --port=8080
+command=/usr/local/bin/php /app/artisan reverb:start --host=127.0.0.1 --port=8080
 user=www-data
 autostart=true
 autorestart=true
@@ -147,7 +148,7 @@ stdout_logfile_maxbytes=0
 # NEW: runs Laravel's scheduled tasks every minute
 "worker-scheduler.conf" = '''
 [program:worker-scheduler]
-command=php /app/artisan schedule:work
+command=/usr/local/bin/php /app/artisan schedule:work
 user=www-data
 autostart=true
 autorestart=true
@@ -161,7 +162,7 @@ stdout_logfile_maxbytes=0
 # NEW: processes queued jobs and queued broadcasts
 "worker-queue.conf" = '''
 [program:worker-queue]
-command=php /app/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+command=/usr/local/bin/php /app/artisan queue:work --sleep=3 --tries=3 --max-time=3600
 user=www-data
 autostart=true
 autorestart=true

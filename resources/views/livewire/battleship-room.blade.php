@@ -360,6 +360,19 @@ $claimVictory = function () {
     }
 };
 
+$pruneGame = function () {
+    $game = Game::where('code', $this->code)->first();
+    if ($game) {
+        $code = $this->code;
+        $game->delete();
+        broadcast(new RoomUpdated($code, 'deleted'));
+    }
+
+    session()->forget("battleship.{$this->code}");
+
+    return $this->redirect(route('battleship.lobby'));
+};
+
 with(function () {
     $game = Game::with(['players', 'shots'])->where('code', $this->code)->first();
     $me = $this->myPlayer();
@@ -432,7 +445,11 @@ with(function () {
     class="max-w-3xl mx-auto p-4">
     <div class="flex items-center justify-between mb-2">
         <h1 class="text-2xl font-bold">⚓ Battleship online</h1>
-        <a href="{{ route('battleship.lobby') }}" class="text-sm text-blue-600 hover:underline">← Exit to Lobby</a>
+        <button wire:click="pruneGame"
+            wire:confirm="Are you sure you want to leave and delete this game?"
+            class="text-xs text-red-600 hover:text-red-700 hover:underline">
+            🗑️ Leave & Prune
+        </button>
     </div>
 
     @if (! $game)
@@ -481,7 +498,14 @@ with(function () {
                 class="px-3 py-1 bg-gray-200 rounded text-sm"
                 x-text="copied ? 'Copied!' : 'Copy'"></button>
         </div>
-        <p class="animate-pulse text-gray-500 mb-4">Waiting for your opponent…</p>
+        <div class="flex items-center justify-between mb-4">
+            <p class="animate-pulse text-gray-500 text-sm">Waiting for your opponent…</p>
+            <button wire:click="pruneGame"
+                wire:confirm="Cancel and delete this game room?"
+                class="text-xs text-red-600 hover:text-red-700 hover:underline">
+                Cancel & Delete Room
+            </button>
+        </div>
         @endif
 
         @if ($playing)
@@ -516,16 +540,24 @@ with(function () {
             @endif
         </p>
 
-        @if ($game->rematch_code)
-        <a href="{{ route('battleship.rematch', $code) }}"
-            class="inline-block mb-3 px-4 py-2 bg-green-600 text-white rounded font-semibold">
-            ⚔️ Your opponent wants a rematch. Join!
-        </a>
-        @else
-        <button wire:click="requestRematch" class="mb-3 px-4 py-2 bg-blue-600 text-white rounded font-semibold">
-            🔁 Rematch
-        </button>
-        @endif
+        <div class="flex items-center gap-3 flex-wrap mb-4">
+            @if ($game->rematch_code)
+            <a href="{{ route('battleship.rematch', $code) }}"
+                class="px-4 py-2 bg-green-600 hover:bg-green-700 active:scale-95 text-white rounded font-semibold text-sm transition shadow">
+                ⚔️ Opponent wants a rematch · Join!
+            </a>
+            @else
+            <button wire:click="requestRematch" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white rounded font-semibold text-sm transition shadow">
+                🔁 Rematch
+            </button>
+            @endif
+
+            <button wire:click="pruneGame"
+                wire:confirm="Are you sure you want to delete this game and leave?"
+                class="px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 rounded font-semibold text-sm transition shadow-sm">
+                🗑️ Prune Game & Leave
+            </button>
+        </div>
         @endif
 
         @if ($message && ! $myTurn)
@@ -605,12 +637,29 @@ with(function () {
                     @endphp
                     <div wire:key="ship-{{ $part['ship'] }}"
                         wire:sort:item="{{ $part['ship'] }}"
-                        class="ship-{{ $part['ship'] }} {{ $h ? 'hull-h' : 'hull-v' }} absolute left-0 top-0 z-20 rounded-full shadow"
+                        class="absolute left-0 top-0 z-20 flex {{ $h ? 'flex-row' : 'flex-col' }} select-none shadow-md group"
                         style="width: {{ $h ? $len * 100 : 100 }}%; height: {{ $h ? 100 : $len * 100 }}%;">
-                        <div wire:sort:handle title="Drag here"
-                            class="absolute left-0 top-0 z-30 w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center cursor-grab active:cursor-grabbing text-white/90 text-xs select-none">
-                            ⠿
-                        </div>
+                        @for ($k = 0; $k < $len; $k++)
+                            @php
+                                $segPart = $k === 0 ? 'stern' : ($k === $len - 1 ? 'bow' : 'mid');
+                                $segCabin = $k > 0 && $k < $len - 1 && $k === intdiv($len - 1, 2);
+                            @endphp
+                            <div class="relative w-7 h-7 sm:w-8 sm:h-8 flex-shrink-0"
+                                wire:click="rotateShip({{ $part['ship'] }})"
+                                title="Click to rotate {{ BattleshipRules::FLEET[$part['ship']]['name'] }}">
+                                <span class="hull hull-{{ $h ? 'h' : 'v' }} {{ $segPart }} ship-{{ $part['ship'] }} {{ $segCabin ? 'cabin' : '' }} group-hover:brightness-110 transition"></span>
+                                @if ($k === 0)
+                                    <div wire:sort:handle title="Drag to move, click to rotate"
+                                        class="absolute inset-0 z-30 flex items-center justify-center cursor-grab active:cursor-grabbing text-white/90 text-xs select-none bg-black/20 hover:bg-black/35 rounded transition">
+                                        ⠿
+                                    </div>
+                                @else
+                                    <div class="absolute inset-0 z-20 flex items-center justify-center opacity-0 group-hover:opacity-80 transition text-[10px] text-white pointer-events-none">
+                                        ↻
+                                    </div>
+                                @endif
+                            </div>
+                        @endfor
                     </div>
                     @endif
             </div>
@@ -639,13 +688,36 @@ with(function () {
         </div>
 
         @if ($editable)
-        <div class="flex flex-wrap gap-2 mt-2 justify-center">
-            @foreach ($layout as $entry)
-            <button wire:click="rotateShip({{ $entry['ship'] }})"
-                class="px-2 py-1 bg-gray-200 rounded text-xs">
-                ↻ {{ BattleshipRules::FLEET[$entry['ship']]['name'] }}
-            </button>
-            @endforeach
+        <div class="mt-4 flex flex-col items-center">
+            <p class="text-xs text-slate-500 mb-2 font-medium">Click any ship or button to rotate ↻ · Drag ⠿ to reposition</p>
+            <div class="flex flex-wrap gap-2.5 justify-center max-w-xl">
+                @foreach ($layout as $entry)
+                @php
+                    $shipId = $entry['ship'];
+                    $shipDef = BattleshipRules::FLEET[$shipId];
+                    $len = $shipDef['length'];
+                    $isH = $entry['dir'] === 'h';
+                @endphp
+                <button wire:click="rotateShip({{ $shipId }})"
+                    title="Rotate {{ $shipDef['name'] }}"
+                    class="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-white rounded-lg text-xs font-medium transition shadow border border-slate-700">
+                    <span class="text-sky-400 font-bold text-sm">↻</span>
+                    <span class="font-semibold text-slate-100">{{ $shipDef['name'] }}</span>
+                    <div class="inline-flex items-center gap-0 p-0.5 rounded bg-slate-950 border border-slate-700">
+                        @for ($i = 0; $i < $len; $i++)
+                            @php
+                                $part = $i === 0 ? 'stern' : ($i === $len - 1 ? 'bow' : 'mid');
+                                $cabin = $i > 0 && $i < $len - 1 && $i === intdiv($len - 1, 2);
+                            @endphp
+                            <div class="water relative w-3.5 h-3.5 select-none">
+                                <span class="hull hull-h {{ $part }} ship-{{ $shipId }} {{ $cabin ? 'cabin' : '' }}"></span>
+                            </div>
+                        @endfor
+                    </div>
+                    <span class="text-[10px] text-slate-400 font-mono">({{ $isH ? '↔ H' : '↕ V' }})</span>
+                </button>
+                @endforeach
+            </div>
         </div>
         @endif
 </div>

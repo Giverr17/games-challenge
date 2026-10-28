@@ -447,10 +447,105 @@ $shipParts = function ($ships) {
         </div>
 
     </div>
-    {{-- the fleet legend --}}
-    <div class="text-sm text-gray-600">
-        @foreach ($fleet as $ship)
-            <p>{{ $ship['name'] }}: {{ str_repeat('■ ', $ship['length']) }}</p>
-        @endforeach
+    {{-- Fleet Status --}}
+    @php
+        $sunkEnemyList = $this->sunkShips();
+    @endphp
+    <div class="w-full max-w-3xl mt-2 grid grid-cols-1 md:grid-cols-2 gap-4">
+        {{-- Enemy Fleet --}}
+        <div class="bg-slate-800 text-white rounded-xl p-4 shadow-md border border-slate-700">
+            <div class="flex items-center justify-between mb-3 border-b border-slate-700 pb-2">
+                <h3 class="font-bold text-sm tracking-wide text-slate-200 flex items-center gap-1.5">
+                    🎯 Enemy Fleet
+                </h3>
+                <span class="text-xs font-mono text-slate-400">
+                    {{ count($sunkEnemyList) }} / {{ count($fleet) }} sunk
+                </span>
+            </div>
+            <div class="space-y-2.5">
+                @foreach ($fleet as $idx => $ship)
+                    @php
+                        $isSunk = in_array($ship['name'], $sunkEnemyList, true);
+                    @endphp
+                    <div class="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg {{ $isSunk ? 'bg-red-950/30 border border-red-900/40' : 'bg-slate-900/60' }}">
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold {{ $isSunk ? 'line-through text-slate-400' : 'text-slate-100' }}">
+                                {{ $ship['name'] }}
+                            </span>
+                            <span class="text-[10px] text-slate-400 font-mono">({{ $ship['length'] }})</span>
+                        </div>
+                        <div class="flex items-center gap-2.5">
+                            <div class="inline-flex items-center gap-0 bg-slate-950 p-0.5 rounded border border-slate-700">
+                                @for ($i = 0; $i < $ship['length']; $i++)
+                                    @php
+                                        $part = $i === 0 ? 'stern' : ($i === $ship['length'] - 1 ? 'bow' : 'mid');
+                                        $cabin = $i > 0 && $i < $ship['length'] - 1 && $i === intdiv($ship['length'] - 1, 2);
+                                    @endphp
+                                    <div class="water relative w-4 h-4 sm:w-5 sm:h-5 select-none">
+                                        <span class="hull hull-h {{ $part }} ship-{{ $idx }} {{ $cabin ? 'cabin' : '' }} {{ $isSunk ? 'wreck' : '' }}"></span>
+                                        @if ($isSunk)
+                                            <span class="fire text-[10px]">🔥</span>
+                                        @endif
+                                    </div>
+                                @endfor
+                            </div>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider {{ $isSunk ? 'bg-red-900/70 text-red-200' : 'bg-emerald-900/60 text-emerald-200' }}">
+                                {{ $isSunk ? 'SUNK' : 'AFLOAT' }}
+                            </span>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
+
+        {{-- Your Fleet --}}
+        <div class="bg-slate-800 text-white rounded-xl p-4 shadow-md border border-slate-700">
+            <div class="flex items-center justify-between mb-3 border-b border-slate-700 pb-2">
+                <h3 class="font-bold text-sm tracking-wide text-slate-200 flex items-center gap-1.5">
+                    🛡️ Your Fleet
+                </h3>
+                @php
+                    $mySunkCount = count($fleet) - count($remainingMine);
+                @endphp
+                <span class="text-xs font-mono text-slate-400">
+                    {{ $mySunkCount }} / {{ count($fleet) }} sunk
+                </span>
+            </div>
+            <div class="space-y-2.5">
+                @foreach ($fleet as $idx => $ship)
+                    @php
+                        $isSunk = ! isset($remainingMine[$idx]);
+                        $damaged = isset($remainingMine[$idx]) && $remainingMine[$idx] < $ship['length'];
+                    @endphp
+                    <div class="flex items-center justify-between text-xs py-1.5 px-2.5 rounded-lg {{ $isSunk ? 'bg-red-950/30 border border-red-900/40' : 'bg-slate-900/60' }}">
+                        <div class="flex items-center gap-2">
+                            <span class="font-semibold {{ $isSunk ? 'line-through text-slate-400' : 'text-slate-100' }}">
+                                {{ $ship['name'] }}
+                            </span>
+                            <span class="text-[10px] text-slate-400 font-mono">({{ $ship['length'] }})</span>
+                        </div>
+                        <div class="flex items-center gap-2.5">
+                            <div class="inline-flex items-center gap-0 bg-slate-950 p-0.5 rounded border border-slate-700">
+                                @for ($i = 0; $i < $ship['length']; $i++)
+                                    @php
+                                        $part = $i === 0 ? 'stern' : ($i === $ship['length'] - 1 ? 'bow' : 'mid');
+                                        $cabin = $i > 0 && $i < $ship['length'] - 1 && $i === intdiv($ship['length'] - 1, 2);
+                                    @endphp
+                                    <div class="water relative w-4 h-4 sm:w-5 sm:h-5 select-none">
+                                        <span class="hull hull-h {{ $part }} ship-{{ $idx }} {{ $cabin ? 'cabin' : '' }} {{ $isSunk ? 'wreck' : '' }}"></span>
+                                        @if ($isSunk)
+                                            <span class="fire text-[10px]">🔥</span>
+                                        @endif
+                                    </div>
+                                @endfor
+                            </div>
+                            <span class="text-[10px] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider {{ $isSunk ? 'bg-red-900/70 text-red-200' : ($damaged ? 'bg-amber-900/70 text-amber-200' : 'bg-blue-900/60 text-blue-200') }}">
+                                {{ $isSunk ? 'SUNK' : ($damaged ? 'HIT' : 'INTACT') }}
+                            </span>
+                        </div>
+                    </div>
+                @endforeach
+            </div>
+        </div>
     </div>
 </div>
