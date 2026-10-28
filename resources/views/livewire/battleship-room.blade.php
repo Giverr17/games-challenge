@@ -312,7 +312,9 @@ $lockFleet = function () {
 };
 
 // calling this re-renders the component, which re-reads the database
-$refreshRoom = function () {};
+$refreshRoom = function () {
+    $this->heartbeat();
+};
 
 $heartbeat = function () {
     $me = $this->myPlayer();
@@ -416,6 +418,7 @@ with(function () {
 
 <div
     x-data
+    wire:poll.15s="heartbeat"
     x-init="
         const refresh = () => $wire.refreshRoom();
         Echo.channel('game.{{ $code }}').listen('RoomUpdated', (e) => {
@@ -427,7 +430,10 @@ with(function () {
     x-on:visibilitychange.window="if (! document.hidden) $wire.refreshRoom()"
     x-on:focus.window="$wire.refreshRoom()"
     class="max-w-3xl mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-1">⚓ Battleship online</h1>
+    <div class="flex items-center justify-between mb-2">
+        <h1 class="text-2xl font-bold">⚓ Battleship online</h1>
+        <a href="{{ route('battleship.lobby') }}" class="text-sm text-blue-600 hover:underline">← Exit to Lobby</a>
+    </div>
 
     @if (! $game)
     <p class="text-gray-700 mb-2">This game no longer exists.</p>
@@ -484,7 +490,7 @@ with(function () {
         </p>
         @php
             $opponentPlayer = $game->players->firstWhere('seat', '!=', $me->seat);
-            $opponenktGone = ! $myTurn
+            $opponentGone = ! $myTurn
                 && $opponentPlayer
                 && $opponentPlayer->last_seen_at
                 && $opponentPlayer->last_seen_at->lt(now()->subSeconds(120));
@@ -509,26 +515,6 @@ with(function () {
             {{ $iWon ? '🎉 You won!' : '💥 You lost. Your fleet was sunk.' }}
             @endif
         </p>
-
-        <ul class="mb-4 space-y-1">
-            @foreach ([1, 2] as $s)
-            @php
-            $p = $game->players->firstWhere('seat', $s);
-            $online = $p && $p->last_seen_at && $p->last_seen_at->gt(now()->subSeconds(60));
-            @endphp
-            <li class="px-3 py-2 rounded {{ $p ? ($p->ready ? 'bg-green-100' : 'bg-yellow-50') : 'bg-gray-100 text-gray-500' }}">
-                Player {{ $s }}:
-                {{ $p ? ($p->ready ? 'ready ✓' : 'placing ships…') : 'waiting…' }}
-                @if ($s === $me->seat) <span class="text-xs">(you)</span> @endif
-
-                @if ($p && $s !== $me->seat && ! $finished)
-                <span class="text-xs ml-2 {{ $online ? 'text-green-600' : 'text-gray-400' }}">
-                    {{ $online ? '● online' : '○ offline' . ($p->last_seen_at ? ' (last seen ' . $p->last_seen_at->diffForHumans() . ')' : '') }}
-                </span>
-                @endif
-            </li>
-            @endforeach
-        </ul>
 
         @if ($game->rematch_code)
         <a href="{{ route('battleship.rematch', $code) }}"
