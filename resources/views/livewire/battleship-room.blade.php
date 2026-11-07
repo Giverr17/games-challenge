@@ -442,7 +442,7 @@ with(function () {
     "
     x-on:visibilitychange.window="if (! document.hidden) $wire.refreshRoom()"
     x-on:focus.window="$wire.refreshRoom()"
-    class="max-w-3xl mx-auto p-4">
+    class="max-w-5xl mx-auto p-4">
     <div class="flex items-center justify-between mb-2">
         <h1 class="text-2xl font-bold">⚓ Battleship online</h1>
         <button wire:click="pruneGame"
@@ -464,6 +464,10 @@ with(function () {
     $myTurn = $playing && $game->turn_seat === $me->seat;
     $editable = $game->status === 'placing' && ! $me->ready;
     @endphp
+
+    <div class="flex flex-col xl:flex-row items-center xl:items-start justify-center gap-8 w-full mt-2">
+        {{-- Room Gameplay Column --}}
+        <div class="flex-1 w-full max-w-3xl">
 
     <p class="text-sm text-gray-500 mb-3">
         You are <b>Player {{ $me->seat }}</b> · Game <code>{{ $code }}</code> · Status: <b>{{ $game->status }}</b>
@@ -734,15 +738,35 @@ with(function () {
 @endif
 @endif
 
-{{-- REJOIN LINK: available to a seated player in every phase --}}
-<details class="mt-6 text-sm text-gray-600">
-    <summary class="cursor-pointer">Lost your seat? Keep your private rejoin link</summary>
-    <p class="mt-1">
-        Open this on another device, or after clearing cookies, to take your seat back.
-        <b>Anyone with this link can play as you, so don't share it.</b>
-    </p>
-    <input readonly value="{{ route('battleship.rejoin', [$code, $me->token]) }}"
-        class="w-full border rounded px-2 py-1 text-xs mt-1">
-</details>
+        </div>
+
+        {{-- Side Column: How to Play & Rejoin Link --}}
+        <div class="w-full max-w-md xl:w-80 flex-shrink-0 space-y-4">
+            <div class="bg-sky-50/90 border border-sky-200 rounded-2xl p-4 text-slate-700 shadow-sm text-xs leading-relaxed">
+                <h2 class="font-bold text-sky-950 flex items-center gap-1.5 text-sm mb-2.5 pb-2 border-b border-sky-200/70">
+                    📖 How to Play Battleship Online
+                </h2>
+                <div class="space-y-2.5">
+                    <p>🎯 <b>The Mission:</b> Sink all 5 of your friend's ships before they sink yours! 🌊</p>
+                    <ul class="list-disc pl-4 space-y-1.5">
+                        <li><b>1. Place your fleet:</b> Drag <b>⠿</b> to move ships. Click any ship or button to rotate ↻ it. Press <b>Ready ✓</b> when done.</li>
+                        <li><b>2. Take turns firing:</b> When it says <i>"Your turn"</i>, click a square on <b>Enemy waters</b> to shoot.</li>
+                        <li><b>3. Hits & Misses:</b> Flame 🔥 means HIT! Water splash 💦 means MISS. Sinking all pieces destroys the ship 💥!</li>
+                        <li><b>4. Win:</b> Sink all 5 ships to win the sea battle trophy 🏆!</li>
+                    </ul>
+                </div>
+            </div>
+
+            {{-- REJOIN LINK: available to a seated player in every phase --}}
+            <details class="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-xl p-3 shadow-xs">
+                <summary class="cursor-pointer font-semibold text-slate-800">Lost your seat? Private rejoin link</summary>
+                <p class="mt-1 text-[11px] text-slate-500">
+                    Open this on another device to take your seat back. Don't share it.
+                </p>
+                <input readonly value="{{ route('battleship.rejoin', [$code, $me->token]) }}"
+                    class="w-full border rounded px-2 py-1 text-xs mt-1 bg-white">
+            </details>
+        </div>
+    </div>
 @endif
 </div>

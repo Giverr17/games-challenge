@@ -40,6 +40,12 @@
             <h2 class="text-xl font-semibold">🚢 Battleship</h2>
             <p class="text-gray-500 mt-2">Classic naval combat. Sink the enemy fleet before they sink yours.</p>
         </a>
+         <a href="{{ route('sudoku') }}"
+            class="block rounded-xl border border-gray-200 p-6 hover:shadow-lg transition">
+            <h2 class="text-xl font-semibold">🔢 Sudoku</h2>
+            <p class="text-gray-500 mt-2">Fill the grid so that each row, column, and 3×3 box contains the digits 1–9 exactly once.</p>
+        </a>
+
     </div>
 </body>
 

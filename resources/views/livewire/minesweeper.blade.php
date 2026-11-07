@@ -11,6 +11,7 @@ state([
     'gameOver' => false,
     'won' => false,
     'elapsedSeconds' => 0,
+    'flagMode' => false,
 ]);
 
 mount(function () {
@@ -129,8 +130,16 @@ $floodFill = function ($row, $col) {
 };
 
 $revealCell = function ($row, $col) {
+    if ($this->gameOver) {
+        return;
+    }
 
-    if ($this->grid[$row][$col]['isFlagged'] || $this->gameOver) {
+    if ($this->flagMode) {
+        $this->toggleFlag($row, $col);
+        return;
+    }
+
+    if ($this->grid[$row][$col]['isFlagged']) {
         return;
     }
 
@@ -147,7 +156,7 @@ $revealCell = function ($row, $col) {
 };
 
 $resetGame = function () {
-    $this->reset(['grid', 'minesPlaced', 'gameOver', 'won']);
+    $this->reset(['grid', 'minesPlaced', 'gameOver', 'won', 'flagMode']);
     $this->elapsedSeconds = 0;
 
     // reset() empties $grid back to [], but we need a fresh populated grid,
@@ -181,48 +190,109 @@ $toggleFlag = function ($row, $col) {
 <div wire:poll.1s="tick" class="flex flex-col items-center px-4 py-6">
     <h1 class="text-2xl font-bold mb-4">🧩 Minesweeper</h1>
 
-    <div class="flex gap-6 mb-4 text-sm font-mono">
-        <span>🚩 {{ $mineCount - collect($grid)->flatten(1)->where('isFlagged', true)->count() }}</span>
-        <span>⏱ {{ $elapsedSeconds }}s</span>
-    </div>
+    @php
+        $numColors = [
+            1 => 'text-blue-600',
+            2 => 'text-emerald-600',
+            3 => 'text-red-600',
+            4 => 'text-indigo-800',
+            5 => 'text-amber-800',
+            6 => 'text-teal-600',
+            7 => 'text-purple-800',
+            8 => 'text-gray-600',
+        ];
+    @endphp
 
-    @if ($gameOver)
-        <p class="mb-2 text-lg font-bold {{ $won ? 'text-green-600' : 'text-red-600' }}">
-            {{ $won ? '🎉 You won!' : '💥 Game over!' }}
-        </p>
-        <button wire:click="resetGame" class="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-            Play Again
-        </button>
-    @endif
+    <div class="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-8 w-full max-w-4xl">
+        {{-- Game Board Column --}}
+        <div class="flex flex-col items-center w-full max-w-sm">
+            <div class="flex items-center justify-between w-full mb-3 px-1 text-sm font-mono">
+                <span class="font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
+                    🚩 {{ $mineCount - collect($grid)->flatten(1)->where('isFlagged', true)->count() }}
+                </span>
+                <div class="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 text-xs font-sans">
+                    <button wire:click="$set('flagMode', false)"
+                        class="px-2.5 py-1 rounded font-semibold transition {{ ! $flagMode ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900' }}">
+                        ⛏️ Dig
+                    </button>
+                    <button wire:click="$set('flagMode', true)"
+                        class="px-2.5 py-1 rounded font-semibold transition {{ $flagMode ? 'bg-red-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900' }}">
+                        🚩 Flag
+                    </button>
+                </div>
+                <span class="font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded border border-slate-200">
+                    ⏱ {{ $elapsedSeconds }}s
+                </span>
+            </div>
 
-    {{-- Board fills the available width (max ~480px on tablet+) and cells stay square via aspect-ratio --}}
-    <div class="w-full max-w-sm mx-auto">
-        <div
-            class="grid gap-1 bg-gray-400 p-1 rounded {{ $gameOver ? 'opacity-75' : '' }}"
-            style="grid-template-columns: repeat({{ $cols }}, 1fr);"
-        >
-            @foreach ($grid as $row)
-                @foreach ($row as $cell)
-                    <div
-                        wire:click="revealCell({{ $cell['row'] }}, {{ $cell['col'] }})"
-                        wire:contextmenu.prevent="toggleFlag({{ $cell['row'] }}, {{ $cell['col'] }})"
-                        class="aspect-square flex items-center justify-center text-sm font-bold select-none cursor-pointer rounded-sm
-                            {{ $cell['isRevealed'] ? 'bg-white text-gray-800' : 'bg-gray-300 hover:bg-gray-200 active:bg-gray-400' }}"
-                    >
-                        @if ($cell['isRevealed'])
-                            @if ($cell['isMine'])
-                                💣
-                            @elseif ($cell['adjacentMines'] > 0)
-                                {{ $cell['adjacentMines'] }}
-                            @endif
-                        @elseif ($gameOver && $cell['isMine'])
-                            💣
-                        @elseif ($cell['isFlagged'])
-                            🚩
-                        @endif
-                    </div>
-                @endforeach
-            @endforeach
+            @if ($gameOver)
+                <p class="mb-2 text-lg font-bold {{ $won ? 'text-green-600' : 'text-red-600' }}">
+                    {{ $won ? '🎉 You won!' : '💥 Game over!' }}
+                </p>
+                <button wire:click="resetGame" class="mb-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 font-semibold text-sm shadow">
+                    Play Again
+                </button>
+            @endif
+
+            <div class="w-full">
+                <div
+                    class="grid gap-1 bg-slate-400 p-1 rounded-lg shadow-inner {{ $gameOver ? 'opacity-90' : '' }}"
+                    style="grid-template-columns: repeat({{ $cols }}, 1fr);"
+                >
+                    @foreach ($grid as $row)
+                        @foreach ($row as $cell)
+                            @php
+                                $isHitMine = $gameOver && ! $won && $cell['isMine'] && $cell['isRevealed'];
+                            @endphp
+                            <div
+                                wire:key="cell-{{ $cell['row'] }}-{{ $cell['col'] }}"
+                                wire:click="revealCell({{ $cell['row'] }}, {{ $cell['col'] }})"
+                                wire:contextmenu.prevent="toggleFlag({{ $cell['row'] }}, {{ $cell['col'] }})"
+                                class="aspect-square flex items-center justify-center text-base font-extrabold select-none cursor-pointer rounded transition-colors
+                                    {{ $cell['isRevealed'] ? ($isHitMine ? 'bg-red-500 text-white' : 'bg-slate-100') : 'bg-slate-300 hover:bg-slate-200 active:bg-slate-400' }}"
+                            >
+                                @if ($cell['isRevealed'])
+                                    @if ($cell['isMine'])
+                                        💣
+                                    @elseif ($cell['adjacentMines'] > 0)
+                                        <span class="{{ $numColors[$cell['adjacentMines']] ?? 'text-gray-800' }}">
+                                            {{ $cell['adjacentMines'] }}
+                                        </span>
+                                    @endif
+                                @elseif ($gameOver && $cell['isMine'])
+                                    💣
+                                @elseif ($cell['isFlagged'])
+                                    🚩
+                                @endif
+                            </div>
+                        @endforeach
+                    @endforeach
+                </div>
+            </div>
+        </div>
+
+        {{-- Side Column: How to play --}}
+        <div id="how-to-play" class="w-full max-w-sm lg:w-72 flex-shrink-0">
+            <div class="border border-gray-200 bg-white rounded-lg p-4 text-xs text-gray-600 space-y-3">
+                <h2 class="font-semibold text-gray-900 text-sm border-b border-gray-100 pb-2">
+                    How to play
+                </h2>
+                <div>
+                    <span class="font-medium text-gray-800">Objective:</span>
+                    <p class="mt-0.5 text-gray-600">Reveal all safe squares without detonating any mines.</p>
+                </div>
+                <div>
+                    <span class="font-medium text-gray-800">Rules:</span>
+                    <ul class="list-disc pl-4 mt-1 space-y-1 text-gray-600">
+                        <li>Click any square to uncover it.</li>
+                        <li>Numbers indicate how many mines touch that square.</li>
+                        <li>Right-click (or toggle Flag mode) to mark suspected mines with a flag.</li>
+                    </ul>
+                </div>
+                <div class="pt-2 border-t border-gray-100 text-gray-500">
+                    <span class="font-medium text-gray-700">Tip:</span> If a 1 touches only one covered square, that square is guaranteed to be a mine.
+                </div>
+            </div>
         </div>
     </div>
 </div>
