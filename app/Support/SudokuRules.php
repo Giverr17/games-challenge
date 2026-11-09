@@ -22,6 +22,22 @@ class SudokuRules
         ];
     }
 
+        // how many times each digit 1 to 9 appears on the board: [1 => 4, 2 => 9, ...]
+    public static function digitCounts(array $grid): array
+    {
+        $counts = array_fill(1, 9, 0);
+
+        foreach ($grid as $row) {
+            foreach ($row as $v) {
+                if ($v >= 1 && $v <= 9) {
+                    $counts[$v]++;
+                }
+            }
+        }
+
+        return $counts;
+    }
+
     public const TARGET_CLUES = ['easy' => 40, 'medium' => 32, 'hard' => 26];
 
 
