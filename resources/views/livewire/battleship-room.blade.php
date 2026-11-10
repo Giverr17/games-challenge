@@ -40,14 +40,25 @@ mount(function (string $code) {
     $game = Game::where('code', $code)->firstOrFail();
 
     if ($this->myPlayer() === null) {
-        $token = Str::random(32);
-        try {
-            $game->players()->create(['seat' => 2, 'token' => $token]);
-            session(["battleship.{$code}" => ['seat' => 2, 'token' => $token]]);
-            $game->update(['status' => 'placing']);
-            broadcast(new RoomUpdated($code, 'joined'));
-        } catch (UniqueConstraintViolationException $e) {
-            $this->full = true; // the database refused: seat 2 is taken
+        // Only try to claim seat 2 if it isn't already taken in the DB.
+        // Previously this always attempted the INSERT and showed "full" on
+        // any UniqueConstraintViolation — including when Player 1 (seat 1)
+        // refreshed without a session and tried to claim seat 2.
+        $seat2Taken = $game->players()->where('seat', 2)->exists();
+
+        if ($seat2Taken) {
+            $this->full = true;
+        } else {
+            $token = Str::random(32);
+            try {
+                $game->players()->create(['seat' => 2, 'token' => $token]);
+                session(["battleship.{$code}" => ['seat' => 2, 'token' => $token]]);
+                $game->update(['status' => 'placing']);
+                broadcast(new RoomUpdated($code, 'joined'));
+            } catch (UniqueConstraintViolationException $e) {
+                // race condition: another request beat us to seat 2
+                $this->full = true;
+            }
         }
     }
 
@@ -455,8 +466,10 @@ with(function () {
     @if (! $game)
     <p class="text-gray-700 mb-2">This game no longer exists.</p>
     <a href="{{ route('battleship.lobby') }}" class="text-blue-600 underline">Start a new game</a>
-    @elseif (! $me)
+    @elseif ($full)
     <p class="text-red-600 font-semibold">This game is already full.</p>
+    @elseif (! $me)
+    <p class="text-red-600 font-semibold">You are not a participant in this game. <a href="{{ route('battleship.lobby') }}" class="underline">Start a new game</a>.</p>
     @else
     @php
     $playing = $game->status === 'playing';
