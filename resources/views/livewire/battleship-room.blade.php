@@ -467,7 +467,11 @@ with(function () {
     <p class="text-gray-700 mb-2">This game no longer exists.</p>
     <a href="{{ route('battleship.lobby') }}" class="text-blue-600 underline">Start a new game</a>
     @elseif ($full)
-    <p class="text-red-600 font-semibold">This game is already full.</p>
+    <div class="mt-6 space-y-3">
+        <p class="text-red-600 font-semibold">This game is already full.</p>
+        <p class="text-sm text-gray-500">If you are a player in this game and lost your session (e.g. after a server restart), use the rejoin link that was shown in your game room, or ask your opponent to share it with you.</p>
+        <a href="{{ route('battleship.lobby') }}" class="text-blue-600 underline text-sm">Start a new game</a>
+    </div>
     @elseif (! $me)
     <p class="text-red-600 font-semibold">You are not a participant in this game. <a href="{{ route('battleship.lobby') }}" class="underline">Start a new game</a>.</p>
     @else
@@ -505,6 +509,20 @@ with(function () {
         </li>
         @endforeach
     </ul>
+
+    {{-- Rejoin link: lets this player recover their seat if they lose their session (e.g. after a server redeploy) --}}
+    <details class="mb-3 text-xs text-gray-400">
+        <summary class="cursor-pointer hover:text-gray-600">🔗 Your rejoin link (save this)</summary>
+        <div class="flex gap-2 mt-1" x-data="{ copied: false }">
+            <input readonly value="{{ route('battleship.rejoin', [$code, $me->token]) }}"
+                class="flex-1 border rounded px-2 py-1 text-xs text-gray-600 bg-gray-50">
+            <button type="button"
+                x-on:click="navigator.clipboard.writeText('{{ route('battleship.rejoin', [$code, $me->token]) }}'); copied = true; setTimeout(() => copied = false, 1500)"
+                class="px-2 py-1 bg-gray-200 rounded text-xs"
+                x-text="copied ? 'Copied!' : 'Copy'"></button>
+        </div>
+        <p class="mt-1 text-gray-400">Use this link to rejoin the game if you lose your session (e.g. after clearing cookies or a server restart).</p>
+    </details>
 
     @if ($game->players->count() < 2)
         <p class="mb-2">Send this link to your opponent:</p>
