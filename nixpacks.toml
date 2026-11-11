@@ -55,6 +55,13 @@ php /app/artisan storage:link --force || true
 
 ln -sf "$(readlink -f "$(which php)")" /usr/local/bin/php
 php /app/artisan migrate --force
+# Clear stale game rooms and sessions left over from the previous deployment.
+# Sessions are invalid after a container restart (cookie points to a dead session ID),
+# and any games whose players have no matching session will show "room is full" for
+# legitimate visitors. Wiping them on every deploy is safe — in-progress games can
+# be resumed via the rejoin link each player sees in the room.
+php /app/artisan db:table sessions --empty 2>/dev/null || php /app/artisan tinker --execute="DB::table('sessions')->truncate();" 2>/dev/null || true
+php /app/artisan tinker --execute="DB::table('game_players')->truncate(); DB::table('games')->truncate(); echo 'games cleared';" 2>/dev/null || true
 chown -R www-data:www-data /var/lib/sqlite
 supervisord -c /etc/supervisord.conf -n
 '''
