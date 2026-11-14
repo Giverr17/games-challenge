@@ -46,3 +46,4 @@ Volt::route('/battleship', 'battleship')->name('battleship');
 Volt::route('/battleship/online', 'battleship-lobby')->name('battleship.lobby');
 Volt::route('/battleship/play/{code}', 'battleship-room')->name('battleship.room');
 Volt::route('/sudoku', 'sudoku')->name('sudoku');
+Route::view('/snake', 'snake')->name('snake');

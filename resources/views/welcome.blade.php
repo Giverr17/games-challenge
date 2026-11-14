@@ -45,6 +45,11 @@
             <h2 class="text-xl font-semibold">🔢 Sudoku</h2>
             <p class="text-gray-500 mt-2">Fill the grid so that each row, column, and 3×3 box contains the digits 1–9 exactly once.</p>
         </a>
+                <a href="{{ route('snake') }}"
+            class="block rounded-xl border border-gray-200 p-6 hover:shadow-lg transition">
+            <h2 class="text-xl font-semibold">🐍 Snake</h2>
+            <p class="text-gray-500 mt-2">Eat, grow, don't hit yourself. A real-time game loop built in React.</p>
+        </a>
 
     </div>
 </body>
