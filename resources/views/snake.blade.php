@@ -8,7 +8,7 @@
     <title>Snake</title>
 
     @viteReactRefresh
-    @vite(['resources/css/app.css', 'resources/js/snake/main.jsx'])
+    @vite(['resources/css/app.css', 'resources/js/snake/Main.jsx'])
 </head>
 
 <body>
