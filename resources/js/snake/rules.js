@@ -8,7 +8,6 @@ export const DIRS = {
     right: { x: 1, y: 0 },
 };
 
-
 const same = (a, b) => a.x === b.x && a.y === b.y;
 
 export function freeCells(snake, cols = COLS, rows = ROWS) {
@@ -19,7 +18,6 @@ export function freeCells(snake, cols = COLS, rows = ROWS) {
                 free.push({ x, y });
             }
         }
-
     }
     return free;
 }
@@ -29,7 +27,6 @@ export function placeFood(snake, cols = COLS, rows = ROWS) {
     const free = freeCells(snake, cols, rows);
     if (free.length === 0) return null;
     return free[Math.floor(Math.random() * free.length)];
-
 }
 
 export function newGame(cols = COLS, rows = ROWS) {
@@ -44,61 +41,75 @@ export function newGame(cols = COLS, rows = ROWS) {
         rows,
         snake,
         dir: 'right',
+        nextDirs: [],
         food: placeFood(snake, cols, rows),
         score: 0,
         status: 'ready',   // ready | playing | paused | over | won
     };
-};
+}
+
 export function turn(state, newDir) {
     if (!DIRS[newDir]) return state;
 
-    const cur = DIRS[state.dir];
+    const queue = Array.isArray(state.nextDirs) ? state.nextDirs : [];
+    if (queue.length >= 2) return state; // buffer up to 2 future turns
+
+    const last = queue.length > 0 ? queue[queue.length - 1] : state.dir;
+    const cur = DIRS[last];
     const next = DIRS[newDir];
     const isReverse = cur.x + next.x === 0 && cur.y + next.y === 0;
 
-    if (isReverse) return state;
-    return { ...state, dir: newDir };
+    if (isReverse || last === newDir) return state;
+
+    return {
+        ...state,
+        nextDirs: [...queue, newDir],
+    };
 }
 
 export function tick(state) {
     if (state.status !== 'playing') return state;
 
+    const queue = Array.isArray(state.nextDirs) ? [...state.nextDirs] : [];
+    const dir = queue.length > 0 ? queue.shift() : state.dir;
+
     const { snake, food, cols, rows } = state;
-    const d = DIRS[state.dir];
+    const d = DIRS[dir];
     const head = snake[0];
 
-    //new head
+    // new head
     const newHead = { x: head.x + d.x, y: head.y + d.y };
 
-    //wall check
+    // wall check
     if (newHead.x < 0 || newHead.x >= cols || newHead.y < 0 || newHead.y >= rows) {
-        return { ...state, status: 'over' };
+        return { ...state, dir, nextDirs: queue, status: 'over' };
     }
 
-    //does the new head land on food?
+    // does the new head land on food?
     const grows = food !== null && same(newHead, food);
 
-    //self check.If not growing, the tail leaves this tick, so skip it.
+    // self check. If not growing, the tail leaves this tick, so skip it.
     const body = grows ? snake : snake.slice(0, -1);
     if (body.some(seg => same(seg, newHead))) {
-        return { ...state, status: 'over' };
+        return { ...state, dir, nextDirs: queue, status: 'over' };
     }
 
     // 5) build the new snake: add head, drop tail unless growing
     const newSnake = [newHead, ...(grows ? snake : snake.slice(0, -1))];
 
     if (!grows) {
-        return { ...state, snake: newSnake };
+        return { ...state, dir, nextDirs: queue, snake: newSnake };
     }
-
+    
     // 6) ate food: new food on a free cell, or win if none left
     const newFood = placeFood(newSnake, cols, rows);
     return {
         ...state,
+        dir,
+        nextDirs: queue,
         snake: newSnake,
         food: newFood,
         score: state.score + 1,
         status: newFood === null ? 'won' : 'playing',
     };
-
 }
