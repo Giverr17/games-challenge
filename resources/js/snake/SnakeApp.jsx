@@ -12,9 +12,9 @@ const KEYS = {
 // Where the two eyes sit on the head, as [left%, top%], for each direction
 const EYES = {
     right: [[58, 14], [58, 64]],
-    left:  [[20, 14], [20, 64]],
-    up:    [[14, 20], [64, 20]],
-    down:  [[14, 58], [64, 58]],
+    left: [[20, 14], [20, 64]],
+    up: [[14, 20], [64, 20]],
+    down: [[14, 58], [64, 58]],
 };
 
 // localStorage can throw (private mode, blocked storage), so wrap it
@@ -67,7 +67,7 @@ export default function SnakeApp() {
     const [game, setGame] = useState(() => newGame());
     const [best, setBest] = useState(readBest);
     const touchStart = useRef(null);
-
+    const boardRef = useRef(null);
     // The delay is derived from the score, never stored
     const delay = speedFor(game.score);
 
@@ -137,7 +137,11 @@ export default function SnakeApp() {
             t.clientY - touchStart.current.y
         );
         touchStart.current = null;
-        if (dir) setGame(old => steerState(old, dir));
+        if (dir) {
+            setGame(old => steerState(old, dir));
+        } else if (boardRef.current && boardRef.current.contains(e.target)) {
+            setGame(togglePause); // a tap on the board pauses or resumes
+        }
     }
 
     // Buttons give up keyboard focus, so pressing Space later doesn't click them twice
@@ -150,7 +154,7 @@ export default function SnakeApp() {
 
     // The drawing: for every cell, decide what to put in it
     const head = game.snake[0];
-    const eyes = EYES[game.dir];
+    const eyes = EYES[game.dir] || EYES.right;
     const cells = [];
     for (let y = 0; y < game.rows; y++) {
         for (let x = 0; x < game.cols; x++) {
@@ -208,7 +212,7 @@ export default function SnakeApp() {
                     <p className="text-lg">Best: {best}</p>
                 </div>
 
-                <div className="relative border-4 border-[#2f3d1f]">
+                <div ref={boardRef} className="relative border-4 border-[#2f3d1f]">
                     <div
                         className="grid"
                         style={{ gridTemplateColumns: `repeat(${game.cols}, 1fr)` }}
