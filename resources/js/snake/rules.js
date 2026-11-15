@@ -112,4 +112,14 @@ export function tick(state) {
         score: state.score + 1,
         status: newFood === null ? 'won' : 'playing',
     };
+
+
+}
+// Speed ramp: derived from the score, never stored
+export const BASE_MS = 150;
+export const STEP_MS = 5;
+export const MIN_MS = 70;
+
+export function speedFor(score) {
+return Math.max(MIN_MS, BASE_MS - score * STEP_MS);
 }
