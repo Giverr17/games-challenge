@@ -50,6 +50,11 @@
             <h2 class="text-xl font-semibold">🐍 Snake</h2>
             <p class="text-gray-500 mt-2">Eat, grow, don't hit yourself. A real-time game loop built in React.</p>
         </a>
+                <a href="{{ route('game2048') }}"
+            class="block rounded-xl border border-gray-200 p-6 hover:shadow-lg transition">
+            <h2 class="text-xl font-semibold">🧩 2048</h2>
+            <p class="text-gray-500 mt-2">Slide, merge and chase the 2048 tile. One rule, reused for four directions.</p>
+        </a>
 
     </div>
 </body>
